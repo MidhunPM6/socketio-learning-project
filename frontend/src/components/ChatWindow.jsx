@@ -10,34 +10,30 @@ const ChatWindow = () => {
   const [newMessage, setNewMessage] = useState([])
   const [username, setUsername] = useState('')
   const [users, setUsers] = useState([])
-  const [selectedUser,setSelectedUser]=useState('')
+  const [selectedUser, setSelectedUser] = useState('')
   const user = JSON.parse(localStorage.getItem('user'))
-  const userId = user._id
-  console.log(selectedUser);
-  
-
+  const userId = user && user._id
 
   useEffect(() => {
-    const storedName = localStorage.getItem('user')
-    if (storedName) {
-      setUsername(storedName)
+    const storedUser = JSON.parse(localStorage.getItem('user'))
+    if (storedUser?.name) {
+      setUsername(storedUser.name)
     } else {
       console.warn('No username found in localStorage')
     }
-    
-    
-    socket.on('user_connected',userId)
-    socket.on('message', msg => {
+
+    // Emit that this user is connected
+    socket.emit('user_connected', userId)
+
+    socket.on('receive_message', msg => {
       console.log('Message received:', msg)
-      // Here you can update the state to display the message in the UI
-      setNewMessage(prevMessages => [...prevMessages, msg]) // Update the state with the new message
+      setNewMessage(prev => [...prev, msg])
     })
-    console.log(newMessage)
 
     return () => {
-      socket.off('message') // Clean up the event listener when the component unmounts
+      socket.off('receive_message')
     }
-  }, [userId])
+  }, [])
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -54,21 +50,25 @@ const ChatWindow = () => {
     fetchUsers()
   }, [])
 
-  const sendMessage = () => {
+  const sendMessage = e => {
+    e.preventDefault()
+    if (!selectedUser) {
+      console.warn('No user selected')
+      return
+    }
 
-    const messageData= {
-        toUserId : selectedUser._id,
-        message:message,
-    } 
-    socket.emit('message', messageData)
-     setMessage((prev) => [...prev, {
-      from: loggedInUserId,
-      content: message
-    }])
-    setMessage("")
+    const messageData = {
+      toUserId: selectedUser._id,
+      message: message
+    }
+
+    socket.emit('send_message', messageData)
+
+    // Add to local messages
+    setNewMessage(prev => [...prev, { from: userId, content: message }])
+
+    setMessage('')
   }
-
-  
 
   return (
     <div className='flex h-screen bg-gray-100'>
@@ -98,7 +98,10 @@ const ChatWindow = () => {
         <div className='flex-1 overflow-y-auto'>
           {/* Chat Item */}
           {users?.map(user => (
-            <div key={user._id} className='flex items-center p-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer bg-blue-50'>
+            <div
+              key={user._id}
+              className='flex items-center p-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer bg-blue-50'
+            >
               <div className='relative'>
                 <img
                   className='w-12 h-12 rounded-full object-cover'
@@ -108,7 +111,10 @@ const ChatWindow = () => {
                 <span className='absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white'></span>
               </div>
               <div className='ml-3 flex-1'>
-                <div className='flex justify-between items-center' onClick={()=>setSelectedUser(user)}>
+                <div
+                  className='flex justify-between items-center'
+                  onClick={() => setSelectedUser(user)}
+                >
                   <h3 className='text-sm font-semibold text-gray-900'>
                     {user.name}
                   </h3>
@@ -127,12 +133,13 @@ const ChatWindow = () => {
       </div>
 
       {/* Chat Area */}
+      
       <div className='flex-1 flex flex-col'>
         {/* Chat Header */}
         <div className='p-4 border-b border-gray-200 flex items-center bg-white'>
           <img
             className='w-10 h-10 rounded-full object-cover'
-            src='https://randomuser.me/api/portraits/women/44.jpg'
+            src='https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTSLU5_eUUGBfxfxRd4IquPiEwLbt4E_6RYMw&s'
             alt='Profile'
           />
           <div className='ml-3'>
@@ -173,90 +180,57 @@ const ChatWindow = () => {
           </div>
         </div>
 
+
         {/* Messages Area */}
+ 
         <div className='flex-1 p-4 overflow-y-auto bg-gray-50'>
           {/* Incoming Message */}
-          <div className='flex mb-4'>
-            <img
-              className='w-8 h-8 rounded-full object-cover mt-1'
-              src='https://randomuser.me/api/portraits/women/44.jpg'
-              alt='Profile'
-            />
-            <div className='ml-3'>
-              <div className='bg-white p-3 rounded-lg rounded-tl-none shadow-sm max-w-xs'>
-                <p className='text-gray-800'>Hey there! How are you doing?</p>
-              </div>
-              <span className='text-xs text-gray-500 mt-1 block'>10:20 AM</span>
-            </div>
-          </div>
+          
+            
 
           {/* Outgoing Message */}
-          <div className='flex justify-end mb-4'>
+          {  
+          newMessage.map((message, index) => (
+            message.from===userId ? 
+            <div key={index} className='flex justify-end mb-4'>
             <div className='mr-3 text-right'>
               <div className='bg-blue-500 text-white p-3 rounded-lg rounded-tr-none shadow-sm max-w-xs'>
-                <p>I'm good, thanks! How about you?</p>
+                <p>{message.content}</p>
               </div>
               <span className='text-xs text-gray-500 mt-1 block'>10:22 AM</span>
             </div>
           </div>
-
-          {/* Incoming Message */}
-          <div className='flex mb-4'>
-            <img
-              className='w-8 h-8 rounded-full object-cover mt-1'
-              src='https://randomuser.me/api/portraits/women/44.jpg'
-              alt='Profile'
-            />
-            <div className='ml-3'>
-              <div className='bg-white p-3 rounded-lg rounded-tl-none shadow-sm max-w-xs'>
-                <p className='text-gray-800'>
-                  I'm doing well! Are we still meeting tomorrow for coffee?
-                </p>
+           :
+           <div className='flex mb-4'>
+              <div className='flex flex-col ml-3'>
+                <div className='bg-white p-3 rounded-lg rounded-tl-none shadow-sm max-w-xs'>
+                  <p className='text-gray-800'>
+                    {message.content}
+                  </p>
+                </div>
+                <span className='text-xs text-gray-500 mt-1 block'>
+                  10:20 AM
+                </span>
               </div>
-              <span className='text-xs text-gray-500 mt-1 block'>10:25 AM</span>
             </div>
-          </div>
+          ))}
         </div>
 
         {/* Message Input */}
         <div className='p-3 border-t border-gray-200 bg-white'>
           <div className='flex items-center'>
-            <button className='p-2 rounded-full hover:bg-gray-100 text-gray-500'>
-              <svg
-                className='w-5 h-5'
-                fill='none'
-                stroke='currentColor'
-                viewBox='0 0 24 24'
-              >
-                <path
-                  strokeLinecap='round'
-                  strokeLinejoin='round'
-                  strokeWidth={2}
-                  d='M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13'
-                />
-              </svg>
-            </button>
             <input
               type='text'
+              value={message}
+              onChange={e => setMessage(e.target.value)}
               placeholder='Type a message'
               className='flex-1 mx-2 p-2 border border-gray-200 rounded-full focus:outline-none focus:border-blue-500 px-4'
             />
-            <button className='p-2 rounded-full hover:bg-gray-100 text-gray-500'>
-              <svg
-                className='w-5 h-5'
-                fill='none'
-                stroke='currentColor'
-                viewBox='0 0 24 24'
-              >
-                <path
-                  strokeLinecap='round'
-                  strokeLinejoin='round'
-                  strokeWidth={2}
-                  d='M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'
-                />
-              </svg>
-            </button>
-            <button className='ml-2 bg-blue-500 text-white p-2 rounded-full hover:bg-blue-600'>
+
+            <button
+              onClick={sendMessage}
+              className='ml-2 bg-blue-500 text-white p-2 rounded-full hover:bg-blue-600 cursor-pointer'
+            >
               <svg
                 className='w-5 h-5'
                 fill='none'
