@@ -6,9 +6,10 @@ import connectDB from './config/db.js'
 import {
   loginController,
   signupController,
-  fetchUserController
+  fetchUserController,
+  saveMessageController,
+  fetchMessageController
 } from './Controller/userController.js'
-
 
 // Ensure the database connection is established
 
@@ -30,33 +31,45 @@ app.use(cors())
 const connectedUsers = {}
 
 io.on('connection', socket => {
-  console.log(socket.id) 
+  console.log(socket.id)
 
   socket.on('user_connected', userId => {
     connectedUsers[userId] = socket.id
     socket.userId = userId
+
+    socket.emit('user_connected_ack')
   })
 
-  socket.on('send_message', ({ toUserId, message }) => {
+  socket.on('send_message', async ({ toUserId, message }) => {
     const fromUserId = socket.userId
-    console.log(message);
-    
+    console.log('heyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy', fromUserId)
+
+    await saveMessageController(fromUserId, toUserId, message)
 
     const receiverSocketId = connectedUsers[toUserId]
-    if (receiverSocketId) {
-      io.to(receiverSocketId).emit('receive_message', {
-        from: fromUserId, 
-        content: message
-      })   
-    }
-})
+    const senderSocketId = connectedUsers[fromUserId]
 
-    socket.on('disconnect', () => {
+    const messagePayload = {
+      sender: fromUserId,
+      receiver: toUserId,
+      message: message
+    }
+
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit('receive_message', messagePayload)
+    }
+
+    if (senderSocketId) {
+      io.to(senderSocketId).emit('receive_message', messagePayload)
+    }
+  })
+
+  socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id)
     if (socket.userId) {
       delete connectedUsers[socket.userId]
     }
-  }) 
+  })
 })
 
 app.post('/api/signup', async (req, res) => {
@@ -96,6 +109,24 @@ app.get('/api/users', async (req, res) => {
     res
       .status(500)
       .json({ message: 'Error fetching users', error: error.message })
+  }
+})
+
+app.get('/api/messages', async (req, res) => {
+  const myID = req.query.myID
+  const toUserId = req.query.toID
+  console.log('heloooooo', toUserId)
+
+  try {
+    const response = await fetchMessageController(myID, toUserId)
+    res
+      .status(200)
+      .json({ message: 'Messages fetched successfully', data: response })
+  } catch (error) {
+    console.error('Error fetching messages:', error)
+    res
+      .status(500)
+      .json({ message: 'Error fetching messages', error: error.message })
   }
 })
 

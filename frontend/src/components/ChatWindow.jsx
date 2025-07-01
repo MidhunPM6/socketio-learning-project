@@ -12,6 +12,7 @@ const ChatWindow = () => {
   const [users, setUsers] = useState([])
   const [selectedUser, setSelectedUser] = useState('')
   const user = JSON.parse(localStorage.getItem('user'))
+  const [isConnected, setIsConnected] = useState(false)
   const userId = user && user._id
 
   useEffect(() => {
@@ -25,15 +26,27 @@ const ChatWindow = () => {
     // Emit that this user is connected
     socket.emit('user_connected', userId)
 
+    socket.on('user_connected_ack', () => {
+      console.log('Server acknowledged user_connected')
+      setIsConnected(true)
+    })
     socket.on('receive_message', msg => {
       console.log('Message received:', msg)
-      setNewMessage(prev => [...prev, msg])
+      if (
+        selectedUser &&
+        ((msg.sender === selectedUser._id && msg.receiver === userId) ||
+          (msg.sender === userId && msg.receiver === selectedUser._id))
+      ) {
+        setNewMessage(prev => [...prev, msg])
+      } else {
+        console.log('Message is not for current chat')
+      }
     })
 
     return () => {
       socket.off('receive_message')
     }
-  }, [])
+  }, [selectedUser, userId])
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -52,6 +65,12 @@ const ChatWindow = () => {
 
   const sendMessage = e => {
     e.preventDefault()
+
+    if (!isConnected) {
+      console.warn('Not connected yet. Wait for user_connected_ack.')
+      return
+    }
+
     if (!selectedUser) {
       console.warn('No user selected')
       return
@@ -65,9 +84,30 @@ const ChatWindow = () => {
     socket.emit('send_message', messageData)
 
     // Add to local messages
-    setNewMessage(prev => [...prev, { from: userId, content: message }])
+    // setNewMessage(prev => [
+    //   ...prev,
+    //   { sender: userId, receiver: selectedUser._id, message }
+    // ])
 
     setMessage('')
+  }
+
+  const fetchHistory = async (e, user) => {
+    e.preventDefault()
+    setSelectedUser(user)
+    const selectedUserId = user._id
+    console.log(selectedUserId)
+
+    try {
+      const response = await axios.get(
+        `http://localhost:3001/api/messages?myID=${userId}&toID=${selectedUserId}`
+      )
+      console.log(response.data)
+
+      setNewMessage(response.data.data)
+    } catch (error) {
+      console.error('Error fetching users:', error)
+    }
   }
 
   return (
@@ -75,23 +115,42 @@ const ChatWindow = () => {
       {/* Sidebar */}
       <div className='w-80 bg-white border-r border-gray-200 flex flex-col'>
         {/* Sidebar Header */}
-        <div className='p-4 border-b border-gray-200 flex justify-between items-center'>
-          <h1 className='text-xl font-bold text-gray-800'>Messages</h1>
-          <button className='p-2 rounded-full hover:bg-gray-100 text-gray-500'>
+        <div className='p-4 border-b border-gray-200 flex flex-col justify-between items-center'>
+          <div className='flex  justify-center items-center gap-1 bg-gray-200 p-3 rounded-full shadow-lg'>
             <svg
-              className='w-5 h-5'
-              fill='none'
-              stroke='currentColor'
+              xmlns='http://www.w3.org/2000/svg'
               viewBox='0 0 24 24'
+              fill='currentColor'
+              class='size-6'
             >
               <path
-                strokeLinecap='round'
-                strokeLinejoin='round'
-                strokeWidth={2}
-                d='M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'
+                fill-rule='evenodd'
+                d='M7.5 6a4.5 4.5 0 1 1 9 0 4.5 4.5 0 0 1-9 0ZM3.751 20.105a8.25 8.25 0 0 1 16.498 0 .75.75 0 0 1-.437.695A18.683 18.683 0 0 1 12 22.5c-2.786 0-5.433-.608-7.812-1.7a.75.75 0 0 1-.437-.695Z'
+                clip-rule='evenodd'
               />
             </svg>
-          </button>
+
+            <h1 className='text-xl font-bold text-gray-800 '>{username}</h1>
+          </div>
+
+          <div className='flex justify-between w-full mt-4 '>
+            <h1 className='text-xl font-bold text-gray-800'>Messages</h1>
+            <button className='p-2 rounded-full hover:bg-gray-100 text-gray-500'>
+              <svg
+                className='w-5 h-5'
+                fill='none'
+                stroke='currentColor'
+                viewBox='0 0 24 24'
+              >
+                <path
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                  strokeWidth={2}
+                  d='M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'
+                />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Chat List */}
@@ -100,6 +159,7 @@ const ChatWindow = () => {
           {users?.map(user => (
             <div
               key={user._id}
+              onClick={e => fetchHistory(e, user)}
               className='flex items-center p-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer bg-blue-50'
             >
               <div className='relative'>
@@ -111,10 +171,7 @@ const ChatWindow = () => {
                 <span className='absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white'></span>
               </div>
               <div className='ml-3 flex-1'>
-                <div
-                  className='flex justify-between items-center'
-                  onClick={() => setSelectedUser(user)}
-                >
+                <div className='flex justify-between items-center'>
                   <h3 className='text-sm font-semibold text-gray-900'>
                     {user.name}
                   </h3>
@@ -127,13 +184,12 @@ const ChatWindow = () => {
               </div>
             </div>
           ))}
-
-          {/* Chat Item */}
         </div>
       </div>
+      {/* Chat Item */}
 
       {/* Chat Area */}
-      
+
       <div className='flex-1 flex flex-col'>
         {/* Chat Header */}
         <div className='p-4 border-b border-gray-200 flex items-center bg-white'>
@@ -180,40 +236,42 @@ const ChatWindow = () => {
           </div>
         </div>
 
-
         {/* Messages Area */}
- 
+
         <div className='flex-1 p-4 overflow-y-auto bg-gray-50'>
           {/* Incoming Message */}
-          
-            
 
           {/* Outgoing Message */}
-          {  
-          newMessage.map((message, index) => (
-            message.from===userId ? 
-            <div key={index} className='flex justify-end mb-4'>
-            <div className='mr-3 text-right'>
-              <div className='bg-blue-500 text-white p-3 rounded-lg rounded-tr-none shadow-sm max-w-xs'>
-                <p>{message.content}</p>
-              </div>
-              <span className='text-xs text-gray-500 mt-1 block'>10:22 AM</span>
-            </div>
-          </div>
-           :
-           <div className='flex mb-4'>
-              <div className='flex flex-col ml-3'>
-                <div className='bg-white p-3 rounded-lg rounded-tl-none shadow-sm max-w-xs'>
-                  <p className='text-gray-800'>
-                    {message.content}
-                  </p>
+          {newMessage.map((message, index) =>
+            message.sender === userId ? (
+              <div key={index} className='flex justify-end mb-4'>
+                <div className='mr-3 text-right'>
+                  <div className='bg-blue-500 text-white p-3 rounded-lg rounded-tr-none shadow-sm max-w-xs'>
+                    <p>{message.message}</p>
+                  </div>
+                  <span className='text-xs text-gray-500 mt-1 block'>
+                    {message.timestamp
+                      ? new Date(message.timestamp).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })
+                      : ''}
+                  </span>
                 </div>
-                <span className='text-xs text-gray-500 mt-1 block'>
-                  10:20 AM
-                </span>
               </div>
-            </div>
-          ))}
+            ) : (
+              <div className='flex mb-4'>
+                <div className='flex flex-col ml-3'>
+                  <div className='bg-white p-3 rounded-lg rounded-tl-none shadow-sm max-w-xs'>
+                    <p className='text-gray-800'>{message.message}</p>
+                  </div>
+                  <span className='text-xs text-gray-500 mt-1 block'>
+                    10:20 AM
+                  </span>
+                </div>
+              </div>
+            )
+          )}
         </div>
 
         {/* Message Input */}

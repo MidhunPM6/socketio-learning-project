@@ -1,5 +1,6 @@
 import Users from "../models/userModel.js"
 import bcrypt from 'bcrypt'
+import Messages from "../models/messageModel.js"
 export const  signupController =async(userData)=>{
     try {
         const {name,email,password} = userData
@@ -45,4 +46,43 @@ export const fetchUserController=async(myID)=>{
         console.error("Error fetching users:", error);
         throw new Error("Error fetching users");
     }
+}
+
+
+export const saveMessageController=async(fromUserId,toUserId,message)=>{
+    console.log("heyyyyyyyyy",fromUserId);
+    
+    try {
+        const savedMessage =  new Messages({
+            sender: fromUserId,
+            receiver: toUserId,
+            message: message
+        })
+        await savedMessage.save()
+        return savedMessage;
+    } catch (error) {
+        console.error("Error saving message:", error);
+        throw new Error("Error saving message");
+    }
+}
+
+export const fetchMessageController=async(myID,toUserId)=>{
+    console.log('myid:',myID+ "toUserId:",toUserId);
+    
+    try {
+
+        const getHistory = await Messages.find({
+            $or: [
+                { sender: myID, receiver: toUserId },
+                { sender: toUserId, receiver: myID }
+            ]
+        })
+        console.log(getHistory);
+        
+        return getHistory
+    } catch (error) {
+        console.error("Error fetching messages:", error);
+        throw new Error("Error fetching messages");
+    }
+    
 }
